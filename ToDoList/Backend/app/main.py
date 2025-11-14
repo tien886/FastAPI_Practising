@@ -68,4 +68,4 @@ async def delete_todo(todo_id: int, db: db_dependency):
         raise HTTPException(status_code=404, detail="ToDo item not found")
     db.delete(db_todo)
     db.commit()
-    return {"result": "Todo deleted successfully"}
+    return {"result": "Todo deleted successfully", "todo_id": db_todo}
