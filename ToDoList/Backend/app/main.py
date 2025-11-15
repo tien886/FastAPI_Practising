@@ -4,7 +4,16 @@ from typing import List, Annotated, Optional
 import model
 from database import SessionLocal, engine
 from sqlalchemy.orm import Session
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 model.Base.metadata.create_all(bind=engine)
      
 class ToDoBase(BaseModel):
@@ -13,7 +22,10 @@ class ToDoBase(BaseModel):
     listodo_id: int
 class ListToDoBase(BaseModel):
     todos: List[ToDoBase]
+    listodo_id: int
     nameoflist: str
+class CreateTodoRequest(BaseModel):
+    todoname: str
 def get_db():
     db = SessionLocal()
     try:
@@ -21,28 +33,43 @@ def get_db():
     finally:
         db.close()
 db_dependency = Annotated[Session, Depends(get_db)]
+@app.get('/todos')
+async def read_all_todolist(db: db_dependency):
+    db_todolist = db.query(model.ListToDo).all()
+    if not db_todolist:
+        raise HTTPException(status_code=404, detail="All ToDo list not found")
+    return db_todolist
 @app.get('/todos/{todolist_id}')
 async def read_todolist(todolist_id: int, db: db_dependency):
-    db_todolist = db.query(model.ListToDo).filter(model.ListToDo.id == todolist_id).first()
+    db_todolist = (
+        db.query(model.ListToDo)
+        .filter(model.ListToDo.id == todolist_id)
+        .first()
+    )
     if not db_todolist:
         raise HTTPException(status_code=404, detail="ToDo list not found")
-    return db_todolist
+    todos = db_todolist.todos
+    return {
+        "list": db_todolist,
+        "todos": todos
+    }
 @app.get('/todos/todo/{todo_id}')
 async def read_todo(todo_id: int, db: db_dependency):
     db_todo = db.query(model.ToDoItem).filter(model.ToDoItem.id == todo_id).first()
     if not db_todo:
         raise HTTPException(status_code=404, detail="ToDo item not found")
     return db_todo
-@app.post('/todos/create_todos')
-async def create_todos(todos: ListToDoBase, db: db_dependency):
-    db_todolist = model.ListToDo(nameoflist=todos.nameoflist, numoftask=len(todos.todos))
-    db.add(db_todolist)
+@app.post('/todos/todo/create_todo')
+async def create_todo(todo: ListToDoBase, db: db_dependency):
+    print(todo)
+    db_todo = model.ToDoItem(task=todo.task, description=todo.description, listodo_id=todo.listodo_id)
+    db.add(db_todo)
     db.commit()
-    db.refresh(db_todolist)
-    print(todos)
-    for todo in todos.todos:
-        db_todo = model.ToDoItem(task=todo.task, description=todo.description, listodo_id=db_todolist.id)
-        db.add(db_todo)
+    return {"result": "Todo created successfully"}
+@app.post('/todos/create_todos')
+async def create_todos(todos: CreateTodoRequest, db: db_dependency):
+    db_todolist = model.ListToDo(nameoflist=todos.todoname, numoftask=0)
+    db.add(db_todolist)
     db.commit()
     return {"result": "Todos created successfully"}
 @app.put('/todos/update_todo/{todo_id}')
@@ -61,7 +88,15 @@ async def update_todo(todo_id: int, todo: ToDoBase, db: db_dependency):
     db.commit()
     db.refresh(db_todo)
     return {"result": "Todo updated successfully", "todo": db_todo}
-@app.delete('/todos/delete_todo/{todo_id}')
+@app.delete('/todos/delete_todos/{todos_id}')
+async def delete_todo(todos_id: int, db: db_dependency):
+    db_todolist = db.query(model.ListToDo).filter(model.ListToDo.id == todos_id).first()
+    if not db_todolist:
+        raise HTTPException(status_code=404, detail="ToDo list not found")
+    db.delete(db_todolist)
+    db.commit()
+    return {"result": "TodoList deleted successfully"}
+@app.delete('/todos/delete_todos/delete_todo/{todo_id}')
 async def delete_todo(todo_id: int, db: db_dependency):
     db_todo = db.query(model.ToDoItem).filter(model.ToDoItem.id == todo_id).first()
     if not db_todo:
